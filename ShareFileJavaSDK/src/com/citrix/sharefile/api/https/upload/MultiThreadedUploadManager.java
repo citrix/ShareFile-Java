@@ -386,7 +386,7 @@ public class MultiThreadedUploadManager {
                 long minChunkIndex = getMinChunkIndex(mResumeArray);
 
                 if (totalBytes % (64 * 1024) == 0) {
-                    mProgressListener.bytesTransfered(totalBytes, minChunkIndex, mResumeFromByteIndex);
+                    mProgressListener.bytesTransferred(totalBytes, minChunkIndex, mResumeFromByteIndex);
                 }
             }
             catch (Exception e) {

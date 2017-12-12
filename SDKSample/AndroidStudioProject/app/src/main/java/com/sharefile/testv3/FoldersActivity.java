@@ -193,7 +193,7 @@ public class FoldersActivity extends Activity implements ISFReExecuteQuery
                 requestParams,
                 is,new TransferRunnable.IProgress() {
                     @Override
-                    public void bytesTransfered(long l)
+                    public void bytesTransferred(long l)
                     {
                         SLog.d(TAG,"uploaded: " + l + " bytes of " + uploadInfo.getFilename());
                     }
@@ -614,9 +614,9 @@ public class FoldersActivity extends Activity implements ISFReExecuteQuery
                                                 new TransferRunnable.IProgress()
                                                 {
                                                     @Override
-                                                    public void bytesTransfered(long l)
+                                                    public void bytesTransferred(long l)
                                                     {
-                                                        Log.d(TAG,"bytes transfered " + l);
+                                                        Log.d(TAG,"bytes Transferred " + l);
                                                     }
 
                                                     @Override

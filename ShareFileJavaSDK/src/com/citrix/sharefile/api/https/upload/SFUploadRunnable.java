@@ -83,7 +83,7 @@ public class SFUploadRunnable extends TransferRunnable
     private boolean mHasMultiThreadedCapability;
 
     public interface IUploadProgress extends IProgress {
-        void bytesTransfered(long byteCount, long chunkIndex, long previousUploadedByteOffset);
+        void bytesTransferred(long byteCount, long chunkIndex, long previousUploadedByteOffset);
     }
 
     public void setUploadSpec(String previousUploadSpec)
@@ -342,7 +342,7 @@ public class SFUploadRunnable extends TransferRunnable
         public boolean mWasError;
         public int mErrorCode;
         public String mErrorMessage;
-        public int mBytesTransferedInChunk;
+        public int mBytesTransferredInChunk;
         public String mItemId;
 
         @SFSDKDefaultAccessScope SFChunkUploadResponse(String jsonString, boolean isLastChunk)
@@ -444,7 +444,7 @@ public class SFUploadRunnable extends TransferRunnable
                     mChunkUploadResponse = new SFChunkUploadResponse(responseString, isLast);
                     if(!mChunkUploadResponse.mWasError)
                     {
-                        mChunkUploadResponse.mBytesTransferedInChunk = (int) bytesUploaded;
+                        mChunkUploadResponse.mBytesTransferredInChunk = (int) bytesUploaded;
                         mTotalBytesTransferredForThisFile +=bytesUploaded;
                         mItemId = mChunkUploadResponse.mItemId;
                         return bytesUploaded;
@@ -572,7 +572,7 @@ public class SFUploadRunnable extends TransferRunnable
         try
         {
             Logger.d(TAG,"ResumeSupp: Bytes Uploaded = " + uploadedBytes);
-            mProgressListener.bytesTransfered(uploadedBytes);
+            mProgressListener.bytesTransferred(uploadedBytes);
         }
         catch(Exception e)
         {
