@@ -2237,9 +2237,6 @@ public class SFItemsEntity extends SFEntitiesBase
 		if (title == null) {
 			throw new InvalidOrMissingParameterException("title");
 		}
-		if (details == null) {
-			throw new InvalidOrMissingParameterException("details");
-		}
 		if (isSend == null) {
 			throw new InvalidOrMissingParameterException("isSend");
 		}
@@ -2281,7 +2278,9 @@ public class SFItemsEntity extends SFEntitiesBase
 		sfApiQuery.addQueryString("tool", tool);
 		sfApiQuery.addQueryString("overwrite", overwrite);
 		sfApiQuery.addQueryString("title", title);
-		sfApiQuery.addQueryString("details", details);
+		if(details != null) {
+			sfApiQuery.addQueryString("details", details);
+		}
 		sfApiQuery.addQueryString("isSend", isSend);
 		sfApiQuery.addQueryString("sendGuid", sendGuid);
 		sfApiQuery.addQueryString("opid", opid);
