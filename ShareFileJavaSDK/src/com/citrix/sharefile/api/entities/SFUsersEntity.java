@@ -44,17 +44,14 @@ public class SFUsersEntity extends SFEntitiesBase
 	* @return the requested User object
 	*/
 	public ISFQuery<SFUser> get(String id, String emailAddress) throws InvalidOrMissingParameterException 	{
-		if (id == null) {
-			throw new InvalidOrMissingParameterException("id");
-		}
-		if (emailAddress == null) {
-			throw new InvalidOrMissingParameterException("emailAddress");
-		}
-
 		SFApiQuery<SFUser> sfApiQuery = new SFApiQuery<SFUser>(this.client);
 		sfApiQuery.setFrom("Users");
-		sfApiQuery.addQueryString("id", id);
-		sfApiQuery.addQueryString("emailAddress", emailAddress);
+		if(id != null) {
+			sfApiQuery.addQueryString("id", id);
+		}
+		if(emailAddress != null) {
+			sfApiQuery.addQueryString("emailAddress", emailAddress);
+		}
 		sfApiQuery.setHttpMethod("GET");
 		return sfApiQuery;
 	}
