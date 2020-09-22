@@ -33,6 +33,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.ConnectException;
+import java.net.MalformedURLException;
+import java.net.ProtocolException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -40,6 +42,7 @@ import java.net.URLConnection;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.net.ssl.HttpsURLConnection;
 
 /**
@@ -173,8 +176,7 @@ class SFApiQueryExecutor<T> implements ISFApiExecuteQuery
         return SFConnectionManager.getInputStream(connection);
     }
 
-    private T executeQueryWithReAuthentication() throws SFServerException,
-            SFNotAuthorizedException, SFInvalidStateException, SFOAuthTokenRenewException, SFOtherException
+    private void reauthenticate() throws SFNotAuthorizedException, SFOAuthTokenRenewException
     {
         if (mQuery.canReNewTokenInternally())
         {
@@ -182,8 +184,8 @@ class SFApiQueryExecutor<T> implements ISFApiExecuteQuery
             {
                 throw new SFNotAuthorizedException(SFKeywords.UN_AUTHORIZED, mReAuthContext);
             }
-
-            return executeQueryAfterTokenRenew();
+            renewToken();
+            logMultipleTokenRenewals();
         }
         else
         {
@@ -193,7 +195,6 @@ class SFApiQueryExecutor<T> implements ISFApiExecuteQuery
                 if(creds!=null && creds.getUserName()!=null && creds.getPassword()!=null)
                 {
                     mQuery.setCredentials(creds.getUserName(),creds.getPassword());
-                    return executeBlockingQuery();
                 }
             }
             throw new SFNotAuthorizedException(SFKeywords.UN_AUTHORIZED, mReAuthContext);
@@ -209,137 +210,157 @@ class SFApiQueryExecutor<T> implements ISFApiExecuteQuery
 	public T executeBlockingQuery() throws SFServerException,
             SFInvalidStateException, SFOAuthTokenRenewException, SFNotAuthorizedException, SFOtherException
     {
-        synchronized (mSFApiClient)
+
+        mSFApiClient.validateClientState();
+
+        int httpErrorCode;
+        String responseString;
+        URLConnection connection = null;
+
+        // Do query under read lock
+        mSFApiClient.readWriteLock.readLock().lock();
+        String urlstr;
+        URL url;
+        try {
+            String server = mSFApiClient.getOAuthToken().getApiServer();
+            urlstr = mQuery.buildQueryUrlString(server);
+
+            setCurrentUri(urlstr);
+
+            url = new URL(urlstr);
+            connection = SFConnectionManager.openConnection(url);
+            SFHttpsCaller.setMethod(connection, mQuery.getHttpMethod(), mQuery.getBody());
+            mAppSpecificConfig.setAddtionalHeaders(connection);
+
+            SFHttpsCaller.addAuthenticationHeader(connection, mSFApiClient.getOAuthToken(),
+                    mQuery.getUserName(), mQuery.getPassword(), mCookieManager);
+
+            handleHttPost(connection);
+
+            Logger.d(TAG, mQuery.getHttpMethod() + " " + urlstr);
+
+            SFConnectionManager.connect(connection);
+
+            httpErrorCode = SFHttpsCaller.safeGetResponseCode(connection);
+
+            SFHttpsCaller.getAndStoreCookies(connection, url, mCookieManager);
+
+            if(shouldGetInputStream())
+            {
+                return (T)getInputStream(connection,httpErrorCode);
+            }
+        }
+        catch (Throwable ex)
         {
+            Logger.e(TAG,ex);
+            throw new SFOtherException(ex);
+        } finally {
+            mSFApiClient.readWriteLock.readLock().unlock();
+        }
 
-            mSFApiClient.validateClientState();
-
-            int httpErrorCode;
-            String responseString;
-            URLConnection connection = null;
-
-            try {
-                String server = mSFApiClient.getOAuthToken().getApiServer();
-                String urlstr = mQuery.buildQueryUrlString(server);
-
-                setCurrentUri(urlstr);
-
-                URL url = new URL(urlstr);
-                connection = SFConnectionManager.openConnection(url);
-                SFHttpsCaller.setMethod(connection, mQuery.getHttpMethod(), mQuery.getBody());
-                mAppSpecificConfig.setAddtionalHeaders(connection);
-
-                SFHttpsCaller.addAuthenticationHeader(connection, mSFApiClient.getOAuthToken(),
-                        mQuery.getUserName(), mQuery.getPassword(), mCookieManager);
-
-                handleHttPost(connection);
-
-                Logger.d(TAG, mQuery.getHttpMethod() + " " + urlstr);
-
-                SFConnectionManager.connect(connection);
-
-                httpErrorCode = SFHttpsCaller.safeGetResponseCode(connection);
-
-                SFHttpsCaller.getAndStoreCookies(connection, url, mCookieManager);
-
-                if(shouldGetInputStream())
+        try {
+            switch (httpErrorCode)
+            {
+                case HttpsURLConnection.HTTP_OK:
                 {
-                    return (T)getInputStream(connection,httpErrorCode);
+                    responseString = SFHttpsCaller.readResponse(connection);
+                    mQuery.setStringResponse(responseString);
+                    Logger.v(TAG, responseString);
+
+                    T ret = callSuccessResponseParser(responseString);
+                    callSaveCredentialsCallback(ret);
+                    if(!SFCapabilityService.getInternal().providerCapabilitiesLoaded(urlstr)) {
+                        SFCapabilityService.getInternal().getCapabilities(urlstr,mSFApiClient);
+                    }
+                    return ret;
                 }
 
-                switch (httpErrorCode)
+                case HttpsURLConnection.HTTP_NO_CONTENT:
                 {
-                    case HttpsURLConnection.HTTP_OK:
-                    {
-                        responseString = SFHttpsCaller.readResponse(connection);
-                        mQuery.setStringResponse(responseString);
-                        Logger.v(TAG, responseString);
-
-                        T ret = callSuccessResponseParser(responseString);
-                        callSaveCredentialsCallback(ret);
-                        if(!SFCapabilityService.getInternal().providerCapabilitiesLoaded(urlstr)) {
-                            SFCapabilityService.getInternal().getCapabilities(urlstr,mSFApiClient);
-                        }
-                        return ret;
-                    }
-                    //break;
-
-                    case HttpsURLConnection.HTTP_NO_CONTENT:
-                    {
-                        return null;
-                    }
-                    //break;
-
-                    case HttpsURLConnection.HTTP_UNAUTHORIZED:
-                    {
-                        Logger.d(TAG, "RESPONSE = AUTH ERROR");
-
-                        callWipeCredentialsCallback();
-
-                        SFFormsAuthenticationCookies formsAuthResponseCookies = SFHttpsCaller.getFormsAuthResponseCookies(url, connection, mCookieManager);
-                        if(formsAuthResponseCookies != null) {
-                            throw new SFNotAuthorizedException(SFKeywords.UN_AUTHORIZED, formsAuthResponseCookies, mReAuthContext);
-                        }
-                        return executeQueryWithReAuthentication();
-                    }
-                    //break;
-
-                    /*
-                       The ShareFile server doesn't treat 404 correctly. Eg: Try creating a
-                       duplicate folder on ShareFile. The resulting http code
-                       is ShareFile(404) vs Connectors(409).
-                       So attempt to parse the server response String for accurate error message.
-                    */
-                    case HttpsURLConnection.HTTP_NOT_FOUND:
-                    {
-                        responseString = SFHttpsCaller.readErrorResponse(connection);
-                        Logger.v(TAG, responseString);
-                        SFV3ErrorParser sfV3error = new SFV3ErrorParser(httpErrorCode, responseString, null);
-                        throw new SFNotFoundException(sfV3error.errorDisplayString());
-                    }
-                    //break;
-
-                    default:
-                    {
-                        if(retryDeleteWithPostOverride(httpErrorCode))
-                        {
-                            mQuery.setBody(EMPTY_JSON);
-                            //This wont cause infinite recursion since retryDeleteWithPostOverride returns false for empty String ""
-                            //and for the retry we have set the body to and empty json "{}".
-                            return executeBlockingQuery();
-                        }
-
-                        responseString = SFHttpsCaller.readErrorResponse(connection);
-                        Logger.v(TAG, responseString);
-                        SFV3ErrorParser sfV3error = new SFV3ErrorParser(httpErrorCode, responseString, null);
-                        throw new SFServerException(httpErrorCode,sfV3error.errorDisplayString());
-                    }
+                    return null;
                 }
-            }
-            catch (ConnectException | UnknownHostException ex)
-            {
-                Logger.e(TAG,ex);
-                throw new SFConnectionException(ex);
-            }
-            catch (SFServerException| SFInvalidStateException |
-                    SFOAuthTokenRenewException | SFNotAuthorizedException e)
-            {
-                Logger.e(TAG,e);
-                throw e;
-            }
-            catch (Throwable ex)
-            {
-                Logger.e(TAG,ex);
-                throw new SFOtherException(ex);
-            }
-            finally
-            {
-                if(closeTheConnection) {
-                SFHttpsCaller.disconnect(connection);
+
+                case HttpsURLConnection.HTTP_UNAUTHORIZED:
+                {
+                    Logger.d(TAG, "RESPONSE = AUTH ERROR");
+
+                    callWipeCredentialsCallback();
+
+                    SFFormsAuthenticationCookies formsAuthResponseCookies = SFHttpsCaller.getFormsAuthResponseCookies(url, connection, mCookieManager);
+                    if(formsAuthResponseCookies != null) {
+                        throw new SFNotAuthorizedException(SFKeywords.UN_AUTHORIZED, formsAuthResponseCookies, mReAuthContext);
+                    }
+                    // Writelock to prevent use of token while it's being updated, note state before
+                    String tokenBefore = mSFApiClient.getOAuthToken().getAccessToken();
+                    mSFApiClient.readWriteLock.writeLock().lock();
+                    if (! tokenBefore.equals(mSFApiClient.getOAuthToken().getAccessToken())) {
+                        // If another thread already refreshed while this thread was waiting
+                        return executeBlockingQuery();
+                    }
+                    try {
+                        // Attempt to reauthenticate, if no exception, retry query
+                        reauthenticate();
+                    } finally {
+                        mSFApiClient.readWriteLock.writeLock().unlock();
+                    }
+                    return executeBlockingQuery();
+                }
+
+                /*
+                   The ShareFile server doesn't treat 404 correctly. Eg: Try creating a
+                   duplicate folder on ShareFile. The resulting http code
+                   is ShareFile(404) vs Connectors(409).
+                   So attempt to parse the server response String for accurate error message.
+                */
+                case HttpsURLConnection.HTTP_NOT_FOUND:
+                {
+                    responseString = SFHttpsCaller.readErrorResponse(connection);
+                    Logger.v(TAG, responseString);
+                    SFV3ErrorParser sfV3error = new SFV3ErrorParser(httpErrorCode, responseString, null);
+                    throw new SFNotFoundException(sfV3error.errorDisplayString());
+                }
+
+                default:
+                {
+                    if(retryDeleteWithPostOverride(httpErrorCode))
+                    {
+                        mQuery.setBody(EMPTY_JSON);
+                        //This wont cause infinite recursion since retryDeleteWithPostOverride returns false for empty String ""
+                        //and for the retry we have set the body to and empty json "{}".
+                        return executeBlockingQuery();
+                    }
+
+                    responseString = SFHttpsCaller.readErrorResponse(connection);
+                    Logger.v(TAG, responseString);
+                    SFV3ErrorParser sfV3error = new SFV3ErrorParser(httpErrorCode, responseString, null);
+                    throw new SFServerException(httpErrorCode,sfV3error.errorDisplayString());
                 }
             }
         }
-	}
+        catch (ConnectException | UnknownHostException ex)
+        {
+            Logger.e(TAG,ex);
+            throw new SFConnectionException(ex);
+        }
+        catch (SFServerException| SFInvalidStateException |
+                SFOAuthTokenRenewException | SFNotAuthorizedException e)
+        {
+            Logger.e(TAG,e);
+            throw e;
+        }
+        catch (Throwable ex)
+        {
+            Logger.e(TAG,ex);
+            throw new SFOtherException(ex);
+        }
+        finally
+        {
+            if(closeTheConnection) {
+                SFHttpsCaller.disconnect(connection);
+            }
+        }
+    }
+
 
 	//On certain connectors , the DELETE verb is not accepted by the server.
     //We need to pass the DELETE as POST override for them.
@@ -451,20 +472,6 @@ class SFApiQueryExecutor<T> implements ISFApiExecuteQuery
 
         throw new SFNotAuthorizedException("Account not authorized");
 
-    }
-
-	private T executeQueryAfterTokenRenew() throws
-            SFServerException,
-            SFInvalidStateException,
-            SFOAuthTokenRenewException,
-            SFNotAuthorizedException,
-            SFOtherException
-    {
-		renewToken();
-
-        logMultipleTokenRenewals();
-
-        return executeBlockingQuery();
     }
 
 	private T executeQueryOnRedirectedObject(SFRedirection redirection) throws
