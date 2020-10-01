@@ -41,6 +41,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class SFApiClient extends ISFEntities.Implementation implements ISFApiClient
 {
@@ -49,6 +50,9 @@ public class SFApiClient extends ISFEntities.Implementation implements ISFApiCli
 	public static final String MSG_INVALID_STATE_OAUTH_NULL = "Invalid state: Oauth token not initialized for SFApiClient";
 	
 	private final AtomicReference<SFOAuth2Token> mOAuthToken = new AtomicReference<SFOAuth2Token>(null);
+	// ReadWriteLock for the client for use in synchronizing requests and updates
+	public final ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+
 	private SFSession mSession = null;	
 	protected SFCookieManager mCookieManager = new SFCookieManager();
 	protected final String mClientID;
@@ -156,8 +160,7 @@ public class SFApiClient extends ISFEntities.Implementation implements ISFApiCli
 	 *   This will internally call the token change listener allowing the creator of this object 
 	 *   to store the new token to Persistant storage.
 	 */
-	@SFSDKDefaultAccessScope
-	void reInitClientState(SFOAuth2Token oauthtoken) throws SFInvalidStateException
+	public void reInitClientState(SFOAuth2Token oauthtoken) throws SFInvalidStateException
 	{
 		mClientInitializedSuccessFully.set(false);
 		
