@@ -1430,6 +1430,24 @@ public class SFUsersEntity extends SFEntitiesBase
 	}
 
 	/**
+	 * Get List of User Shared Folders
+	 * Retrieve the list of shared folders the specified user has access to
+	 * @return A list of Folder objects, representing shared folders of an user
+	 */
+	public ISFQuery<SFODataFeed<SFItem>> getAllSharedFoldersForSpecificUser(URI url) throws InvalidOrMissingParameterException	{
+		if (url == null) {
+			throw new InvalidOrMissingParameterException("url");
+		}
+
+		SFApiQuery<SFODataFeed<SFItem>> sfApiQuery = new SFApiQuery<SFODataFeed<SFItem>>(this.client);
+		sfApiQuery.setFrom("Users");
+		sfApiQuery.setAction("AllSharedFolders");
+		sfApiQuery.addIds(url);
+		sfApiQuery.setHttpMethod("GET");
+		return sfApiQuery;
+	}
+
+	/**
 	* Get List of User Shared Folders
 	* Retrieve the top-level folders for this user. This method requires the account to be
 	* in the new UI model of "My Files", "Shared", "Connectors", "Favorites" tab - otherwise
