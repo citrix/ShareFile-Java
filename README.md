@@ -268,13 +268,13 @@ the SDK can help you find them.  These aliases are exposed on the `SFFolderID`.
       TransferRunnable.IProgress progressListener = new TransferRunnable.IProgress() 
       {
       	@Override
-        public void bytesTransfered(long bytesTransfered) {}
+        public void bytesTransferred(long bytesTransferred) {}
 
         @Override
-        public void onError(SFSDKException e, long bytesTransfered) {}
+        public void onError(SFSDKException e, long bytesTransferred) {}
 
         @Override
-        public void onComplete(long bytesTransfered) {}
+        public void onComplete(long bytesTransferred) {}
       };
             
       SFDownloadRunnable downloader  = apiClient.getDownloader(fileToDownload,outputStream, progressListener);
@@ -287,7 +287,7 @@ the SDK can help you find them.  These aliases are exposed on the `SFFolderID`.
 		TransferRunnable.IProgress progressListener = new TransferRunnable.IProgress() 
 		{
 			@Override
-			public void bytesTransfered(long bytesTrasnfered) {}
+			public void bytesTransferred(long bytesTrasnfered) {}
 			
 			@Override
 			public void onError(SFSDKException e, long bytesTrasnfered) {}

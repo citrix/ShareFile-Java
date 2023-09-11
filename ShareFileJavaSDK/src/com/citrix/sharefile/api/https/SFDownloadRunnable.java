@@ -170,7 +170,7 @@ public class SFDownloadRunnable extends TransferRunnable {
 		}
 		
 		try {
-			mProgressListener.bytesTransfered(downloadedBytes);
+			mProgressListener.bytesTransferred(downloadedBytes);
 			
 		} catch(Exception e) {
 			Logger.d(TAG, "exception in updateProgress" , e);
